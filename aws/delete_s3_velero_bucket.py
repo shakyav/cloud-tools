@@ -8,19 +8,14 @@ Required (environment Variable):
     AWS_SECRET_ACCESS_KEY
 
 Usage:
-1.  python delete_s3_velero_bucket.py
-
-    Required:
-    S3_CLUSTER: evironmental variable for the cluster name of the mapped bucket to be deleted.
-
-2. The module can be imported and used like below :
+1. The module can be imported and used like below :
 
     import delete_s3_velero_bucket
 
     delete_s3_bucket.delete_velero_cluster_buckets(cluster)
     -   cluster: the name of the cluster
 
-3.  python delete_s3_velero_bucket.py -c|--cluster <cluster_name>
+2.  python delete_s3_velero_bucket.py -c|--cluster <cluster_name>
 
     example:
     1. python delete_s3_velero_bucket.py -c mts-rhods-c1
@@ -32,14 +27,16 @@ import json
 import os
 import re
 import sys
+import logging
+
 from http import HTTPStatus
 from typing import Union
 
 import boto3
-from ocp_utilities.logger import get_logger
 
-LOGGER = get_logger(__name__)
+LOGGER = logging.getLogger(__name__)
 S3_CLIENT = boto3.client("s3")
+REQUIRE_ENV = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
 
 
 class DeleteBucketError(Exception):
@@ -50,15 +47,13 @@ class DeleteFolderObjectError(Exception):
     """Raise when a bucket folder is not deleted"""
 
 
-def delete_velero_cluster_buckets(cluster: str) -> None:
+def delete_velero_cluster_buckets(cluster) -> None:
     """
     Delete the velero bucket associated with a cluster
 
     Args:
         cluster: The cluster name
 
-    Returns:
-        None
     """
 
     LOGGER.info(f"Delete velero buckets for '{cluster}' cluster")
@@ -70,10 +65,9 @@ def delete_velero_cluster_buckets(cluster: str) -> None:
 
     for bucket in velero_bucket_list:
         if verify_cluster_matches_velero_infrastructure_name(
-            cluster_name=cluster,
-            bucket_name=bucket["Name"],
+                cluster_name=cluster,
+                bucket_name=bucket["Name"],
         ):
-
             delete_all_objects_from_s3_folder(
                 bucket_name=bucket["Name"],
             )
@@ -91,9 +85,6 @@ def delete_bucket(bucket_name: str) -> None:
 
     Args:
         bucket_name: the bucket name
-
-    Returns:
-        None
 
     Raises:
         DeleteBucketError: if delete response status code is not HTTPStatus.NO_CONTENT or HTTPStatus.NOT_FOUND
@@ -124,9 +115,6 @@ def delete_bucket(bucket_name: str) -> None:
 def get_velero_buckets() -> list:
     """
     Get a list of velero buckets
-
-    Args:
-        None
 
     Returns:
         list of velero buckets
@@ -159,12 +147,10 @@ def get_velero_infrastructure_name(bucket_name: str) -> Union[str, None]:
         if tag["Key"] == "velero.io/infrastructureName":
             return tag["Value"]
 
-    return None
-
 
 def verify_cluster_matches_velero_infrastructure_name(
-    cluster_name: str,
-    bucket_name: str,
+        cluster_name: str,
+        bucket_name: str,
 ) -> bool:
     """
     Get the velero bucket infrastructure name and compare it with the cluster
@@ -185,10 +171,9 @@ def verify_cluster_matches_velero_infrastructure_name(
 
     # Verify if the bucket is associated with the cluster
     if velero_infrastructure_name and re.search(
-        rf"{cluster_name}(-\w+)?$",
-        velero_infrastructure_name,
+            rf"{cluster_name}(-\w+)?$",
+            velero_infrastructure_name,
     ):
-
         LOGGER.info(
             f"Verified cluster '{cluster_name}' is associated with velero infrastructure name {velero_infrastructure_name}",
         )
@@ -198,14 +183,12 @@ def verify_cluster_matches_velero_infrastructure_name(
 
 
 def delete_all_objects_from_s3_folder(bucket_name: str) -> None:
-
     """
     Deletes all files in a folder of an S3 bucket
 
     Args:
         bucket_name: The bucket name
 
-    Returns: None
 
     Raises:
         DeleteFolderObjectError: if respone status code is not HTTPStatus.OK
@@ -250,9 +233,6 @@ def get_cluster_name() -> str:
     The cluster name can be passed as a command line argument or an environment variable.
     The script exits if the cluster name is not provided
 
-    Args:
-        None
-
     Returns:
         The name of the cluster
     """
@@ -263,46 +243,48 @@ def get_cluster_name() -> str:
         help=""" Either set the S3_CLUSTER environment variable or
             Pass the cluster value at the command line when the script is invoked with the -c|--cluster
         """,
-        default=os.getenv("S3_CLUSTER"),
     )
 
     cluster_name = parser.parse_args().cluster_name
     if cluster_name:
         return cluster_name
 
-    LOGGER.error(
-        """
-            Required cluster value was not set!
-            Run script with --help for specifics
-        """,
-    )
+    LOGGER.error("Required cluster value was not set! Run script with --help for specifics")
     sys.exit(1)
 
 
-def verify_aws_env_requirements_met() -> None:
-
+def verify_env_variables_and_parameters() -> None:
     """
-    Verify that the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set.
+    Verify that the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY are cluster name are set.
     The script exits if neither is set.
 
-    Returns: None
+    Returns:
+         cluster name
     """
-    require_env = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
-    for env_var in require_env:
-        if not os.getenv(env_var):
-            LOGGER.error(
-                f"Required enviroment variable '{env_var}' was not set:\n"
-                "Below are the required environment variables:\n\t"
-                f" {require_env}",
-            )
-            sys.exit(1)
+    found_env = []
+    for env_var in REQUIRE_ENV:
+        if os.getenv(env_var):
+            found_env.append(env_var)
+    parser = argparse.ArgumentParser(description="Delete an s3 velero cluster bucket")
+    parser.add_argument(
+        "-c",
+        "--cluster_name",
+        help=""" Either set the S3_CLUSTER environment variable or
+                Pass the cluster value at the command line when the script is invoked with the -c|--cluster
+            """,
+    )
+    cluster_name = parser.parse_args().cluster_name
+    if len(found_env) < len(REQUIRE_ENV):
+        LOGGER.error(f"Missing environment variable found: {found_env}, require:{REQUIRE_ENV}")
+        sys.exit(1)
+    if not cluster_name:
+        LOGGER.error("Missing cluster name")
+        sys.exit(1)
+    return cluster_name
 
 
 def main():
-
-    cluster_name = get_cluster_name()
-    verify_aws_env_requirements_met()
-    delete_velero_cluster_buckets(cluster=cluster_name)
+    delete_velero_cluster_buckets(cluster=verify_env_variables_and_parameters())
 
 
 if __name__ == "__main__":
