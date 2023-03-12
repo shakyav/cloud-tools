@@ -253,7 +253,7 @@ def get_cluster_name() -> str:
     sys.exit(1)
 
 
-def verify_env_variables_and_parameters() -> None:
+def verify_env_variables_and_parameters():
     """
     Verify that the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY are cluster name are set.
     The script exits if neither is set.
