@@ -208,6 +208,12 @@ def main():
     for env_var in REQUIRE_ENV:
         if os.getenv(env_var):
             found_env.append(env_var)
+    if len(found_env) < len(REQUIRE_ENV):
+        LOGGER.error(
+            f"Missing environment variable found: {found_env}, require:{REQUIRE_ENV}"
+        )
+        sys.exit(1)
+
     parser = argparse.ArgumentParser(description="Delete an s3 velero cluster bucket")
     parser.add_argument(
         "-c",
@@ -217,11 +223,6 @@ def main():
                 """,
     )
     cluster_name = parser.parse_args().cluster_name
-    if len(found_env) < len(REQUIRE_ENV):
-        LOGGER.error(
-            f"Missing environment variable found: {found_env}, require:{REQUIRE_ENV}"
-        )
-        sys.exit(1)
     if not cluster_name:
         LOGGER.error("Missing cluster name")
         sys.exit(1)
