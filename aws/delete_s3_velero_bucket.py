@@ -24,11 +24,10 @@ Usage:
 """
 import argparse
 import json
+import logging
 import os
 import re
 import sys
-import logging
-
 from http import HTTPStatus
 from typing import Union
 
@@ -65,8 +64,8 @@ def delete_velero_cluster_buckets(cluster) -> None:
 
     for bucket in velero_bucket_list:
         if verify_cluster_matches_velero_infrastructure_name(
-                cluster_name=cluster,
-                bucket_name=bucket["Name"],
+            cluster_name=cluster,
+            bucket_name=bucket["Name"],
         ):
             delete_all_objects_from_s3_folder(
                 bucket_name=bucket["Name"],
@@ -149,8 +148,8 @@ def get_velero_infrastructure_name(bucket_name: str) -> Union[str, None]:
 
 
 def verify_cluster_matches_velero_infrastructure_name(
-        cluster_name: str,
-        bucket_name: str,
+    cluster_name: str,
+    bucket_name: str,
 ) -> bool:
     """
     Get the velero bucket infrastructure name and compare it with the cluster
@@ -171,11 +170,12 @@ def verify_cluster_matches_velero_infrastructure_name(
 
     # Verify if the bucket is associated with the cluster
     if velero_infrastructure_name and re.search(
-            rf"{cluster_name}(-\w+)?$",
-            velero_infrastructure_name,
+        rf"{cluster_name}(-\w+)?$",
+        velero_infrastructure_name,
     ):
         LOGGER.info(
-            f"Verified cluster '{cluster_name}' is associated with velero infrastructure name {velero_infrastructure_name}",
+            f"Verified cluster '{cluster_name}' "
+            f"is associated with velero infrastructure name {velero_infrastructure_name}",
         )
         return True
 
@@ -212,7 +212,7 @@ def delete_all_objects_from_s3_folder(bucket_name: str) -> None:
         "HTTPStatusCode"
     ]
     if delete_response_http_status_code == HTTPStatus.OK:
-        LOGGER.info(f"Objects deleted successfully")
+        LOGGER.info("Objects deleted successfully")
         return
     else:
         LOGGER.error(
@@ -249,7 +249,9 @@ def get_cluster_name() -> str:
     if cluster_name:
         return cluster_name
 
-    LOGGER.error("Required cluster value was not set! Run script with --help for specifics")
+    LOGGER.error(
+        "Required cluster value was not set! Run script with --help for specifics"
+    )
     sys.exit(1)
 
 
@@ -275,7 +277,9 @@ def verify_env_variables_and_parameters():
     )
     cluster_name = parser.parse_args().cluster_name
     if len(found_env) < len(REQUIRE_ENV):
-        LOGGER.error(f"Missing environment variable found: {found_env}, require:{REQUIRE_ENV}")
+        LOGGER.error(
+            f"Missing environment variable found: {found_env}, require:{REQUIRE_ENV}"
+        )
         sys.exit(1)
     if not cluster_name:
         LOGGER.error("Missing cluster name")
