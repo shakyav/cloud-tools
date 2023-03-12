@@ -38,14 +38,6 @@ S3_CLIENT = boto3.client("s3")
 REQUIRE_ENV = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
 
 
-class DeleteBucketError(Exception):
-    """Raise when a bucket is not deleted"""
-
-
-class DeleteFolderObjectError(Exception):
-    """Raise when a bucket folder is not deleted"""
-
-
 def delete_velero_cluster_buckets(cluster) -> None:
     """
     Delete the velero bucket associated with a cluster
@@ -84,9 +76,6 @@ def delete_bucket(bucket_name: str) -> None:
 
     Args:
         bucket_name: the bucket name
-
-    Raises:
-        DeleteBucketError: if delete response status code is not HTTPStatus.NO_CONTENT or HTTPStatus.NOT_FOUND
     """
     LOGGER.info(f"Delete cluster bucket {bucket_name}")
     response = S3_CLIENT.delete_bucket(Bucket=bucket_name)
@@ -104,11 +93,7 @@ def delete_bucket(bucket_name: str) -> None:
         f"Bucket {bucket_name} not deleted",
         json.dumps(response, defualt=str, indent=4),
     )
-
-    raise DeleteBucketError(
-        f'Bucket Deletion Error: Expecting {HTTPStatus.NO_CONTENT} or {HTTPStatus.NOT_FOUND} Status code:"'
-        f"but got {response_http_status_code}",
-    )
+    sys.exit(1)
 
 
 def get_velero_buckets() -> list:
@@ -188,10 +173,6 @@ def delete_all_objects_from_s3_folder(bucket_name: str) -> None:
 
     Args:
         bucket_name: The bucket name
-
-
-    Raises:
-        DeleteFolderObjectError: if respone status code is not HTTPStatus.OK
     """
 
     list_obj_response = S3_CLIENT.list_objects_v2(Bucket=bucket_name)
@@ -219,50 +200,10 @@ def delete_all_objects_from_s3_folder(bucket_name: str) -> None:
             "Objects not deleted:\n:"
             f"{json.dumps(delete_response, default=str, indent=4)}",
         )
-
-        raise DeleteFolderObjectError(
-            f'Folder Object Deletion Error: Expecting a {HTTPStatus.OK} Status code:"'
-            f"but got {delete_response_http_status_code}",
-        )
+        sys.exit(1)
 
 
-def get_cluster_name() -> str:
-    """
-    Get the cluster name passed to the script
-
-    The cluster name can be passed as a command line argument or an environment variable.
-    The script exits if the cluster name is not provided
-
-    Returns:
-        The name of the cluster
-    """
-    parser = argparse.ArgumentParser(description="Delete an s3 velero cluster bucket")
-    parser.add_argument(
-        "-c",
-        "--cluster_name",
-        help=""" Either set the S3_CLUSTER environment variable or
-            Pass the cluster value at the command line when the script is invoked with the -c|--cluster
-        """,
-    )
-
-    cluster_name = parser.parse_args().cluster_name
-    if cluster_name:
-        return cluster_name
-
-    LOGGER.error(
-        "Required cluster value was not set! Run script with --help for specifics"
-    )
-    sys.exit(1)
-
-
-def verify_env_variables_and_parameters():
-    """
-    Verify that the AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY are cluster name are set.
-    The script exits if neither is set.
-
-    Returns:
-         cluster name
-    """
+def main():
     found_env = []
     for env_var in REQUIRE_ENV:
         if os.getenv(env_var):
@@ -272,8 +213,8 @@ def verify_env_variables_and_parameters():
         "-c",
         "--cluster_name",
         help=""" Either set the S3_CLUSTER environment variable or
-                Pass the cluster value at the command line when the script is invoked with the -c|--cluster
-            """,
+                    Pass the cluster value at the command line when the script is invoked with the -c|--cluster
+                """,
     )
     cluster_name = parser.parse_args().cluster_name
     if len(found_env) < len(REQUIRE_ENV):
@@ -284,11 +225,8 @@ def verify_env_variables_and_parameters():
     if not cluster_name:
         LOGGER.error("Missing cluster name")
         sys.exit(1)
-    return cluster_name
 
-
-def main():
-    delete_velero_cluster_buckets(cluster=verify_env_variables_and_parameters())
+    delete_velero_cluster_buckets(cluster=cluster_name)
 
 
 if __name__ == "__main__":
