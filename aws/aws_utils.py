@@ -3,7 +3,6 @@ import sys
 
 from ocp_utilities.logger import get_logger
 
-
 LOGGER = get_logger(__name__)
 
 
@@ -28,4 +27,3 @@ def verify_aws_env_requirements_met() -> None:
             f" {require_env}",
         )
         sys.exit(1)
-

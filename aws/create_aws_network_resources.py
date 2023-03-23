@@ -22,10 +22,11 @@ Import this module to create AWS network resources and Security Group with Inbou
 import json
 import os
 import sys
-from ipaddress import AddressValueError
-from ipaddress import IPv4Network
+import time
+from ipaddress import AddressValueError, IPv4Network
 
 import boto3
+import click
 from aws_utils import verify_aws_env_requirements_met
 from botocore.exceptions import ClientError
 from ocp_utilities.logger import get_logger
@@ -44,17 +45,22 @@ def ec2_assign_name_tag(res_id, tag_name) -> None:
 
     Returns: None
     """
-    ec2_client.create_tags(
-        Resources=[
-            res_id,
-        ],
-        Tags=[
-            {
-                "Key": "Name",
-                "Value": tag_name,
-            },
-        ],
-    )
+    try:
+
+        ec2_client.create_tags(
+            Resources=[
+                res_id,
+            ],
+            Tags=[
+                {
+                    "Key": "Name",
+                    "Value": tag_name,
+                },
+            ],
+        )
+    except ClientError as client_err:
+        LOGGER.error(client_err)
+        raise
 
 
 def get_subnets_cidr(cidr_block, subnet_count) -> list:
@@ -74,6 +80,9 @@ def get_subnets_cidr(cidr_block, subnet_count) -> list:
     subnet_range = []
     try:
         net = IPv4Network(cidr_block)
+        LOGGER.info(f"cidr block net  get subnets function: {net}")
+        LOGGER.info(f"type : {net}")
+
         prefix = net.prefixlen + (subnet_count * 2)
         for subnet in net.subnets(new_prefix=prefix):
             subnet_range.append(str(subnet))
@@ -98,9 +107,10 @@ def get_availability_zones() -> list:
         av_zones = ec2_client.describe_availability_zones()
         for zone in av_zones.get("AvailabilityZones"):
             zones.append(zone.get("ZoneId"))
+        LOGGER.info(f" az : {zones}")
         return zones
-    except ClientError as ex:
-        LOGGER.error(ex)
+    except ClientError as client_err:
+        LOGGER.error(client_err)
         raise
 
 
@@ -121,8 +131,9 @@ def create_network_resources(cidr_block, site_name, subnet_count) -> dict:
 
     verify_aws_env_requirements_met()
 
-    vpc_output = {}
+    # vpc_output = {}
     subnet_cidr_blocks = get_subnets_cidr(cidr_block, subnet_count)
+    LOGGER.info(f" subnet cidr blocks: {subnet_cidr_blocks}")
     availability_zones = get_availability_zones()
 
     # Check the provided number of public and private subnet pairs should not be more than 3
@@ -134,170 +145,81 @@ def create_network_resources(cidr_block, site_name, subnet_count) -> dict:
         sys.exit(1)
 
     try:
-        LOGGER.info("Creating VPC...")
-        vpc = ec2_client.create_vpc(
-            CidrBlock=cidr_block,
-            AmazonProvidedIpv6CidrBlock=False,
-        )
 
-        vpc_id = vpc["Vpc"]["VpcId"]
-        vpc_output["vpc_id"] = vpc_id
-        ec2_assign_name_tag(res_id=vpc_id, tag_name=site_name)
-        ec2_client.get_waiter("vpc_available").wait(VpcIds=[vpc_id])
-
-        ec2_client.modify_vpc_attribute(
-            EnableDnsSupport={
-                "Value": True,
-            },
-            VpcId=vpc_id,
-        )
-
-        ec2_client.modify_vpc_attribute(
-            EnableDnsHostnames={
-                "Value": True,
-            },
-            VpcId=vpc_id,
-        )
-
-        aws_region = os.getenv("AWS_REGION")
-        LOGGER.info("Creating VPC Endpoint...")
-        vpc_endpoint = ec2_client.create_vpc_endpoint(
-            VpcId=vpc_id,
-            ServiceName=f"com.amazonaws.{aws_region}.s3",
-        )
-        ec2_assign_name_tag(
-            res_id=vpc_endpoint["VpcEndpoint"]["VpcEndpointId"],
-            tag_name=f"{site_name}-endpoint-s3",
-        )
+        vpc_output = create_vpc_and_vpc_endpoint(cidr_block, site_name)
+        vpc_id = vpc_output["vpc_id"]
 
         LOGGER.info(f"Creating {subnet_count} Public Subnets...")
-        public_subnet_ids = []
-        for count in range(subnet_count):
-            subnet = ec2_client.create_subnet(
-                CidrBlock=subnet_cidr_blocks[count],
-                VpcId=vpc_id,
-                AvailabilityZoneId=availability_zones[count],
-            )
-            ec2_assign_name_tag(
-                res_id=subnet["Subnet"]["SubnetId"],
-                tag_name=f"{site_name}-subnet-public-{count+1}",
-            )
-            public_subnet_ids.append(subnet["Subnet"]["SubnetId"])
-        vpc_output["public_subnet_ids"] = public_subnet_ids
+        vpc_output["public_subnet_ids"] = create_public_subnets_for_vpc(
+            subnet_count, vpc_id, subnet_cidr_blocks, availability_zones, site_name
+        )
 
         LOGGER.info(f"Creating {subnet_count} Private Subnets...")
-        private_subnet_ids = []
-        for count in range(subnet_count):
-            subnet = ec2_client.create_subnet(
-                CidrBlock=subnet_cidr_blocks[count + subnet_count],
-                VpcId=vpc_id,
-                AvailabilityZoneId=availability_zones[count],
-            )
-            ec2_assign_name_tag(
-                res_id=subnet["Subnet"]["SubnetId"],
-                tag_name=f"{site_name}-subnet-private-{count+1}",
-            )
-            private_subnet_ids.append(subnet["Subnet"]["SubnetId"])
-        vpc_output["private_subnet_ids"] = private_subnet_ids
+        vpc_output["private_subnet_ids"] = create_private_subnets_for_vpc(
+            subnet_count, vpc_id, subnet_cidr_blocks, availability_zones, site_name
+        )
 
         LOGGER.info("Creating Internet Gateway...")
-        internet_gateway = ec2_client.create_internet_gateway()
-        internet_gateway_id = internet_gateway["InternetGateway"]["InternetGatewayId"]
-        ec2_assign_name_tag(
-            res_id=internet_gateway_id,
-            tag_name=f"{site_name}-igw",
-        )
+        internet_gateway_id = create_and_attach_igw(site_name, vpc_id)
 
-        ec2_client.attach_internet_gateway(
-            InternetGatewayId=internet_gateway_id,
-            VpcId=vpc_id,
-        )
-
-        alloc_ids = []
         LOGGER.info(f"Allocating Public IPs for VPC {vpc_id}")
-        for count in range(subnet_count):
-            eip = ec2_client.allocate_address(Domain="vpc")
-            ec2_assign_name_tag(
-                res_id=eip["AllocationId"],
-                tag_name=f"{site_name}-eip{count+1}",
-            )
-            alloc_ids.append(eip["AllocationId"])
+        alloc_ids = allocate_elastic_ips(subnet_count, site_name)
 
-        nat_gateway_ids = []
         LOGGER.info("Creating Nat Gateway (1 per AZ) for each public subnet")
-        for count in range(subnet_count):
-            nat_gateway = ec2_client.create_nat_gateway(
-                AllocationId=alloc_ids[count],
-                SubnetId=public_subnet_ids[count],
-            )
-            ec2_assign_name_tag(
-                res_id=nat_gateway["NatGateway"]["NatGatewayId"],
-                tag_name=f"{site_name}-nat-public{count+1}",
-            )
-            nat_gateway_ids.append(nat_gateway["NatGateway"]["NatGatewayId"])
-        ec2_client.get_waiter("nat_gateway_available").wait(
-            NatGatewayIds=nat_gateway_ids,
+        nat_gateway_ids = create_nat_gateway(
+            subnet_count, site_name, vpc_output, alloc_ids, "public"
         )
 
-        LOGGER.info("Creating Route Tables")
-        rt_public = ec2_client.create_route_table(VpcId=vpc_id)
-        rt_public_id = rt_public["RouteTable"]["RouteTableId"]
-        ec2_assign_name_tag(
-            res_id=rt_public_id,
-            tag_name=f"{site_name}-rtb-public",
-        )
+        LOGGER.info("Creating  Public Route Tables")
 
-        rt_private_ids = []
-        for count in range(subnet_count):
-            rt_private = ec2_client.create_route_table(VpcId=vpc_id)
-            ec2_assign_name_tag(
-                res_id=rt_private["RouteTable"]["RouteTableId"],
-                tag_name=f"{site_name}-rtb-private{count+1}",
-            )
-            rt_private_ids.append(rt_private["RouteTable"]["RouteTableId"])
+        rt_public_id = create_public_route_table(site_name, vpc_id)
+        LOGGER.info("Creating  Private Route Tables")
+        rt_private_ids = create_private_route_table(
+            subnet_count,
+            vpc_id,
+            site_name,
+        )
 
         LOGGER.info("Creating Routes for  Route Tables")
-        route_ipv4 = ec2_client.create_route(
-            RouteTableId=rt_public_id,
-            DestinationCidrBlock="0.0.0.0/0",
-            GatewayId=internet_gateway_id,
+        associate_route_ipv4(rt_public_id, internet_gateway_id)
+
+        associate_route_ipv6(rt_public_id, internet_gateway_id)
+
+        associate_route_to_private_nat(subnet_count, rt_private_ids, nat_gateway_ids)
+
+        associate_vpc_endpoint_private_route(vpc_output["vpc_endpoint"], rt_private_ids)
+
+        public_route_table_association(
+            subnet_count,
+            route_table_id=rt_public_id,
+            subnet_id=vpc_output["public_subnet_ids"],
         )
 
-        route_ipv6 = ec2_client.create_route(
-            RouteTableId=rt_public_id,
-            DestinationIpv6CidrBlock="::/0",
-            GatewayId=internet_gateway_id,
+        private_route_table_association(
+            subnet_count,
+            route_table_id=rt_private_ids,
+            subnet_id=vpc_output["private_subnet_ids"],
         )
-
-        for count in range(subnet_count):
-            route_private = ec2_client.create_route(
-                RouteTableId=rt_private_ids[count],
-                DestinationCidrBlock="0.0.0.0/0",
-                NatGatewayId=nat_gateway_ids[count],
-            )
-
-        associate_rt_vpc_endpoint = ec2_client.modify_vpc_endpoint(
-            VpcEndpointId=vpc_endpoint["VpcEndpoint"]["VpcEndpointId"],
-            AddRouteTableIds=rt_private_ids,
-        )
-
-        for count in range(subnet_count):
-            associate_rt_pub_subnet = ec2_client.associate_route_table(
-                RouteTableId=rt_public_id,
-                SubnetId=public_subnet_ids[count],
-            )
-
-        for count in range(subnet_count):
-            associate_rt_pvt_subnet = ec2_client.associate_route_table(
-                RouteTableId=rt_private_ids[count],
-                SubnetId=private_subnet_ids[count],
-            )
-
         return vpc_output
 
     except ClientError as ec2_client_err:
         LOGGER.error(ec2_client_err)
         raise
+
+
+def associate_route_to_private_nat(subnet_count, rt_private_ids, nat_gateway_ids):
+    """
+    Args:
+        subnet_count(int):
+        rt_private_ids(list): list containing id for private route table
+        nat_gateway_ids(list): list consisting nat gateway id's
+    """
+    for count in range(subnet_count):
+        ec2_client.create_route(
+            RouteTableId=rt_private_ids[count],
+            DestinationCidrBlock="0.0.0.0/0",
+            NatGatewayId=nat_gateway_ids[count],
+        )
 
 
 def create_security_group(vpc_id, sec_grp_name) -> str:
@@ -341,13 +263,17 @@ def ec2_add_inbound_security_rule(security_grp_id, sg_rule) -> None:
 
     Returns: None
     """
-    ec2_client.authorize_security_group_ingress(
-        GroupId=security_grp_id,
-        CidrIp=sg_rule["CidrIp"],
-        IpProtocol=sg_rule["IpProtocol"],
-        FromPort=sg_rule["FromPort"],
-        ToPort=sg_rule["ToPort"],
-    )
+    try:
+        ec2_client.authorize_security_group_ingress(
+            GroupId=security_grp_id,
+            CidrIp=sg_rule["CidrIp"],
+            IpProtocol=sg_rule["IpProtocol"],
+            FromPort=sg_rule["FromPort"],
+            ToPort=sg_rule["ToPort"],
+        )
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
 
 
 def ec2_add_outbound_security_rule(security_grp_id, sg_rule) -> None:
@@ -360,13 +286,17 @@ def ec2_add_outbound_security_rule(security_grp_id, sg_rule) -> None:
 
     Returns: None
     """
-    ec2_client.authorize_security_group_egress(
-        GroupId=security_grp_id,
-        CidrIp=sg_rule["CidrIp"],
-        IpProtocol=sg_rule["IpProtocol"],
-        FromPort=sg_rule["FromPort"],
-        ToPort=sg_rule["ToPort"],
-    )
+    try:
+        ec2_client.authorize_security_group_egress(
+            GroupId=security_grp_id,
+            CidrIp=sg_rule["CidrIp"],
+            IpProtocol=sg_rule["IpProtocol"],
+            FromPort=sg_rule["FromPort"],
+            ToPort=sg_rule["ToPort"],
+        )
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
 
 
 def ec2_add_security_rules(security_grp_id, rules_json_file) -> None:
@@ -398,3 +328,323 @@ def ec2_add_security_rules(security_grp_id, rules_json_file) -> None:
         LOGGER.error(ec2_client_err)
         raise
 
+
+def create_public_subnets_for_vpc(
+    subnet_count, vpc_id, subnet_cidr_blocks, availability_zones, site_name
+):
+    public_subnet_ids_list = []
+    for count in range(subnet_count):
+        subnet = ec2_client.create_subnet(
+            CidrBlock=subnet_cidr_blocks[count],
+            VpcId=vpc_id,
+            AvailabilityZoneId=availability_zones[count],
+        )
+        time.sleep(5)
+        ec2_assign_name_tag(
+            res_id=subnet["Subnet"]["SubnetId"],
+            tag_name=f"{site_name}-subnet-public-{count+1}",
+        )
+        public_subnet_ids_list.append(subnet["Subnet"]["SubnetId"])
+    return public_subnet_ids_list
+
+
+def create_private_subnets_for_vpc(
+    subnet_count, vpc_id, subnet_cidr_blocks, availability_zones, site_name
+):
+    private_subnet_ids_list = []
+    for count in range(subnet_count):
+        subnet = ec2_client.create_subnet(
+            CidrBlock=subnet_cidr_blocks[count + subnet_count],
+            VpcId=vpc_id,
+            AvailabilityZoneId=availability_zones[count],
+        )
+        time.sleep(5)
+        ec2_assign_name_tag(
+            res_id=subnet["Subnet"]["SubnetId"],
+            tag_name=f"{site_name}-subnet-private-{count+1}",
+        )
+        private_subnet_ids_list.append(subnet["Subnet"]["SubnetId"])
+    return private_subnet_ids_list
+
+
+def create_and_attach_igw(site_name, vpc_id):
+    internet_gateway = ec2_client.create_internet_gateway()
+    internet_gateway_id = internet_gateway["InternetGateway"]["InternetGatewayId"]
+    ec2_assign_name_tag(
+        res_id=internet_gateway_id,
+        tag_name=f"{site_name}-igw",
+    )
+
+    ec2_client.attach_internet_gateway(
+        InternetGatewayId=internet_gateway_id,
+        VpcId=vpc_id,
+    )
+    return internet_gateway_id
+
+
+def allocate_elastic_ips(subnet_count, site_name):
+    """ """
+    eip_list = []
+    for count in range(subnet_count):
+        eip = ec2_client.allocate_address(Domain="vpc")
+        ec2_assign_name_tag(
+            res_id=eip["AllocationId"],
+            tag_name=f"{site_name}-eip{count+1}",
+        )
+        eip_list.append(eip["AllocationId"])
+    return eip_list
+
+
+def create_nat_gateway(subnet_count, site_name, vpc_output, alloc_ids, subnet_type):
+    """ """
+    nat_gateway_id_list = []
+    for count in range(subnet_count):
+        nat_gateway = ec2_client.create_nat_gateway(
+            AllocationId=alloc_ids[count],
+            SubnetId=vpc_output["public_subnet_ids"][count],
+        )
+        ec2_assign_name_tag(
+            res_id=nat_gateway["NatGateway"]["NatGatewayId"],
+            tag_name=f"{site_name}-nat-{subnet_type}{count+1}",
+        )
+        nat_gateway_id_list.append(nat_gateway["NatGateway"]["NatGatewayId"])
+    ec2_client.get_waiter("nat_gateway_available").wait(
+        NatGatewayIds=nat_gateway_id_list,
+    )
+    return nat_gateway_id_list
+
+
+def create_public_route_table(site_name, vpc_id):
+    """
+    Create route table for public routes
+
+    Args:
+        site_name(str): vpc name
+        vpc_id(str): vpc Id of the associated vpc
+    Return:
+        str: route table id
+
+    Raises:
+        ClientError: raises ec2 client error
+    """
+    try:
+
+        rt_public = ec2_client.create_route_table(VpcId=vpc_id)
+        rt_public_id = rt_public["RouteTable"]["RouteTableId"]
+        time.sleep(3)
+        ec2_assign_name_tag(
+            res_id=rt_public_id,
+            tag_name=f"{site_name}-rtb-public",
+        )
+        return rt_public_id
+
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def create_private_route_table(subnet_count, vpc_id, site_name):
+    """
+    Create route table for private routes
+
+    Args:
+        subent_count(int): no. of subnets
+        vpc_id(str): vpc Id of the associated vpc
+        site_name(str): vpc name
+
+    Return:
+        list: list containing subnet Ids
+
+    Raises:
+        ClientError: raises ec2 client error
+    """
+    try:
+
+        rt_private_ids_list = []
+        for count in range(subnet_count):
+            rt_private = ec2_client.create_route_table(VpcId=vpc_id)
+            time.sleep(3)
+            ec2_assign_name_tag(
+                res_id=rt_private["RouteTable"]["RouteTableId"],
+                tag_name=f"{site_name}-rtb-private{count+1}",
+            )
+            rt_private_ids_list.append(rt_private["RouteTable"]["RouteTableId"])
+        return rt_private_ids_list
+
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def associate_route_ipv4(route_table_id, internet_gateway_id):
+    """ """
+    try:
+
+        LOGGER.info("Creating Routes for  Route Tables")
+        ec2_client.create_route(
+            RouteTableId=route_table_id,
+            DestinationCidrBlock="0.0.0.0/0",
+            GatewayId=internet_gateway_id,
+        )
+        return
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def associate_route_ipv6(route_table_id, internet_gateway_id):
+    """ """
+    try:
+
+        ec2_client.create_route(
+            RouteTableId=route_table_id,
+            DestinationIpv6CidrBlock="::/0",
+            GatewayId=internet_gateway_id,
+        )
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def public_route_table_association(subnet_count, route_table_id, subnet_id):
+    """
+    args:
+       route_table_type(str): public or private
+       subnet_count(int): max value is 3
+       route_table_id:
+       subnet_id()
+    """
+    try:
+
+        for count in range(subnet_count):
+            ec2_client.associate_route_table(
+                RouteTableId=route_table_id,
+                SubnetId=subnet_id[count],
+            )
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def private_route_table_association(subnet_count, route_table_id, subnet_id):
+    """
+    args:
+       route_table_type(str): public or private
+       subnet_count(int): max value is 3
+       route_table_id:
+       subnet_id()
+    """
+    try:
+
+        for count in range(subnet_count):
+            ec2_client.associate_route_table(
+                RouteTableId=route_table_id[count],
+                SubnetId=subnet_id[count],
+            )
+    except ClientError as ec2_client_err:
+        LOGGER.error(ec2_client_err)
+        raise
+
+
+def associate_vpc_endpoint_private_route(vpc_endpoint, rt_private_ids):
+
+    ec2_client.modify_vpc_endpoint(
+        VpcEndpointId=vpc_endpoint,
+        AddRouteTableIds=rt_private_ids,
+    )
+
+
+def create_vpc_and_vpc_endpoint(cidr_block, site_name):
+    vpc_output = {}
+    LOGGER.info("Creating VPC...")
+    vpc = ec2_client.create_vpc(
+        CidrBlock=cidr_block,
+        AmazonProvidedIpv6CidrBlock=False,
+    )
+
+    vpc_id = vpc["Vpc"]["VpcId"]
+    vpc_output["vpc_id"] = vpc_id
+    ec2_client.get_waiter("vpc_available").wait(VpcIds=[vpc_id])
+
+    ec2_assign_name_tag(res_id=vpc_id, tag_name=site_name)
+
+    ec2_client.modify_vpc_attribute(
+        EnableDnsSupport={
+            "Value": True,
+        },
+        VpcId=vpc_id,
+    )
+
+    ec2_client.modify_vpc_attribute(
+        EnableDnsHostnames={
+            "Value": True,
+        },
+        VpcId=vpc_id,
+    )
+
+    aws_region = os.getenv("AWS_REGION")
+    vpc_endpoint = ec2_client.create_vpc_endpoint(
+        VpcId=vpc_id,
+        ServiceName=f"com.amazonaws.{aws_region}.s3",
+    )
+
+    while True:
+        state = vpc_endpoint["VpcEndpoint"]["State"]
+        if state == "available":
+            break
+        time.sleep(5)
+    ec2_assign_name_tag(
+        res_id=vpc_endpoint["VpcEndpoint"]["VpcEndpointId"],
+        tag_name=f"{site_name}-endpoint-s3",
+    )
+    vpc_output["vpc_endpoint"] = vpc_endpoint["VpcEndpoint"]["VpcEndpointId"]
+
+    return vpc_output
+
+
+@click.command()
+@click.option(
+    "--aws-access-key-id",
+    help="Set AWS access key id, default if taken from environment variable: AWS_ACCESS_KEY_ID",
+    required=True,
+    default=os.getenv("AWS_ACCESS_KEY_ID"),
+)
+@click.option(
+    "--aws-secret-access-key",
+    help="Set AWS secret access key id,default if taken from environment variable: AWS_SECRET_ACCESS_KEY",
+    required=True,
+    default=os.getenv("AWS_SECRET_ACCESS_KEY"),
+)
+@click.option(
+    "-c",
+    "--cluster-name",
+    help="",
+    required=True,
+    default=os.getenv("AWS_SECRET_ACCESS_KEY"),
+)
+@click.option(
+    "--region",
+    help="Set aws region, where you want to create resources",
+    required=True,
+    default=os.getenv("AWS_REGION"),
+)
+def main():
+    print(get_availability_zones())
+
+    res = create_network_resources(
+        cidr_block="10.0.0.0/16", site_name="odf-ci", subnet_count=3
+    )
+    LOGGER.info(f"\nResources ID: {res}")
+
+    security_grp_id = create_security_group(
+        vpc_id=res["vpc_id"], sec_grp_name="odf-sec-group"
+    )
+    LOGGER.info(f"\nSecurity Grp: {security_grp_id}")
+
+    ec2_add_security_rules(
+        security_grp_id=security_grp_id, rules_json_file="rules.json"
+    )
+
+
+if __name__ == "__main__":
+    main()
