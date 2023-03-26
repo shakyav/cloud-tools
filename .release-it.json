@@ -42,7 +42,7 @@
           "files": [
             "pyproject.toml"
           ],
-          "search": "version = '1.0.0'",
+          "search": "version = \"\\d+\\.\\d+\\.\\d+\"",
           "replace": "version = {{version}}"
         }
       ]
