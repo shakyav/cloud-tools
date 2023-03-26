@@ -12,6 +12,7 @@ exclude =
 fcn_exclude_functions =
     logging,
     LOGGER,
+    parser,
 
 enable-extensions =
     FCN,

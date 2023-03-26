@@ -109,3 +109,6 @@ venv.bak/
 
 # IntelliJ project folder
 .idea/
+
+# nmp
+node_modules/
