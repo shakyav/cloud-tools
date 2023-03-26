@@ -43,7 +43,7 @@
             "pyproject.toml"
           ],
           "search": "version = \"\\d+\\.\\d+\\.\\d+\"",
-          "replace": "version = {{version}}"
+          "replace": "version = \"{{version}}\""
         }
       ]
     }
