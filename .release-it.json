@@ -42,7 +42,8 @@
           "files": [
             "pyproject.toml"
           ],
-          "search": "version = d+\\.d+\\.d+",
+//          "search": "version = d+\\.d+\\.d+",
+          "search": "version = '1.0.0'",
           "replace": "version = {{version}}"
         }
       ]
