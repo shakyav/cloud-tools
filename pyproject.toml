@@ -1,0 +1,41 @@
+[tool.black]
+line-length = 88
+target_version = ['py38', 'py39', 'py310', "py311"]
+exclude = '''
+(
+  /(
+    | \.git
+    | \.venv
+    | \.mypy_cache
+    | \.tox
+  )/
+)
+'''
+
+[tool.isort]
+line_length = 88
+profile = "black"
+
+[tool.poetry]
+name = "redhat-qe-cloud-tools"
+version = "1.0.0"
+description = "Python utilities to manage cloud services, such as AWS."
+authors = ["Meni Yakove", "Ruth Netser"]
+readme = "README.md"
+repository = "https://github.com/RedHatQE/cloud-tools"
+packages = [{include = "clouds"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+colorlog = "*"
+boto3 = "*"
+click = "*"
+configparser = "*"
+
+[tool.poetry.dev-dependencies]
+ipython = "*"
+ipdb = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
