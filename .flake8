@@ -9,5 +9,9 @@ exclude =
     docs/*,
     .cache/*
 
+fcn_exclude_functions =
+    logging,
+    LOGGER,
+
 enable-extensions =
     FCN,

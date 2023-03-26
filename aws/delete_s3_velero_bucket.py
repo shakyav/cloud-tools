@@ -1,24 +1,3 @@
-"""
-The main purpose of this script is to delete a bucket associated with a cluster
-after the cluster is uninstalled:
--   The script will delete the velero bucket that is mapped to a cluster.
-
-Required:
-    AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY as environment variable or input argument
-    cluster name as argument
-
-Usage:
-1. The module can be imported and used like below :
-
-    import delete_s3_velero_bucket
-
-    delete_s3_bucket.delete_velero_cluster_buckets(cluster)
-    -   cluster: the name of the cluster
-
-2.  python delete_s3_velero_bucket.py
-        --aws_access_key_id=<access-key> --aws_secret_access_key=<secret> -c|--cluster <cluster_name>
-
-"""
 import json
 import logging
 import os
