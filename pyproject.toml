@@ -31,6 +31,7 @@ colorlog = "*"
 boto3 = "*"
 click = "*"
 configparser = "*"
+python-simple-logger="*"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"
