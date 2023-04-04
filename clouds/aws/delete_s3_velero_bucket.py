@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import re
 import sys
@@ -8,8 +7,9 @@ from typing import Union
 
 import boto3
 import click
+from simple_logger.logger import get_logger
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(name=__name__)
 
 
 def delete_velero_cluster_buckets(cluster, boto_client) -> None:
