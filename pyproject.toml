@@ -32,6 +32,7 @@ boto3 = "*"
 click = "*"
 configparser = "*"
 python-simple-logger="*"
+openshift-python-utilities = "*"
 
 [tool.poetry.dev-dependencies]
 ipython = "*"
