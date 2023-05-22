@@ -28,7 +28,7 @@ def create_or_update_role_policy(
     Args:
         role_name (str): role policy name
         policy_name (str): policy name
-        policy_document (str): loaded json file that holds the policy documents
+        policy_document (str): policy documents as Json file content
         region (str): aws region
     """
     client = iam_client(region=region)
