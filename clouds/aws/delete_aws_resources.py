@@ -17,22 +17,16 @@ def delete_rds_instances(region):
     rds_client = boto3.client(service_name="rds", region_name=region)
     db_instances = rds_client.describe_db_instances()["DBInstances"]
     for db_instance_identifier in db_instances:
-        pass
-        # import ipdb
-        #
-        # ipdb.set_trace()
-        # ["DBInstanceIdentifier"]
+        LOGGER.warning(f"DB instance identifier: {db_instance_identifier}")
+        # TODO: once we have the contents of db_instance_identifier, update code to delete it
         # aws rds modify-db-instance --no-deletion-protection --db-instance-identifier "${rds}"
 
 
 def delete_vpc_peering_connections(region):
     ec2_client = boto3.client(service_name="ec2", region_name=region)
     for conn in ec2_client.describe_vpc_peering_connections()["VpcPeeringConnections"]:
-        pass
-        # import ipdb
-        #
-        # ipdb.set_trace()
-        # ["VpcPeeringConnectionId"]
+        LOGGER.warning(f"VPC peering connection: {conn}")
+        # TODO: once we have the contents of conn, update code to delete it
         # aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id "${pc}"
 
 
