@@ -25,17 +25,6 @@ def delete_rds_instances(region):
         # aws rds modify-db-instance --no-deletion-protection --db-instance-identifier "${rds}"
 
 
-def delete_elasticsearch(region):
-    elasticache_client = boto3.client(service_name="elasticache", region_name=region)
-    for group in elasticache_client.describe_replication_groups()["ReplicationGroups"]:
-        pass
-        # import ipdb
-        #
-        # ipdb.set_trace()
-        # ["ReplicationGroupId"]
-        # aws elasticache delete-replication-group --replication-group-id "${erg}"
-
-
 def delete_vpc_peering_connections(region):
     ec2_client = boto3.client(service_name="ec2", region_name=region)
     for conn in ec2_client.describe_vpc_peering_connections()["VpcPeeringConnections"]:
@@ -87,9 +76,6 @@ def delete_buckets(region):
     s3_client = boto3.client(service_name="s3", region_name=region)
     for bucket in s3_client.list_buckets()["Buckets"]:
         pass
-        # import ipdb
-        #
-        # ipdb.set_trace()
         # delete_all_objects_from_s3_folder(bucket_name=bucket["Name"], boto_client=s3_client)
         # delete_bucket(bucket_name=bucket["Name"], boto_client=s3_client)
 
@@ -101,15 +87,13 @@ def main():
         iam_client = boto3.client(service_name="iam", region_name=region)
         LOGGER.info(f"Deleting resources in region {region}")
         delete_rds_instances(region=region)
-        delete_elasticsearch(region=region)
         delete_vpc_peering_connections(region=region)
         delete_open_id_connect_provider(iam_client=iam_client)
         delete_instance_profiles(iam_client=iam_client)
         delete_roles(iam_client=iam_client)
-        # Exclude elasticache, they are deleted with the replication group above
         # run_command(
         #     command=shlex.split(
-        #         f"cloud-nuke aws --region {region} --exclude-resource-type elasticache --force"
+        #         f"cloud-nuke aws --region {region} --force"
         #     )
         # )
         delete_buckets(region=region)

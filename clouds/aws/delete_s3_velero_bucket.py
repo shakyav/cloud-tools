@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import sys
 from http import HTTPStatus
 from typing import Union
 
@@ -71,7 +70,6 @@ def delete_bucket(bucket_name: str, boto_client) -> None:
         f"Bucket {bucket_name} not deleted",
         json.dumps(response, defualt=str, indent=4),
     )
-    sys.exit(1)
 
 
 def get_velero_buckets(boto_client) -> list:
@@ -159,13 +157,13 @@ def delete_all_objects_from_s3_folder(bucket_name: str, boto_client) -> None:
 
     Args:
         bucket_name: The bucket name
-        boto_client: AWS client
+        boto_client: AWS S3 client
     """
 
-    list_obj_response = boto_client.list_objects_v2(Bucket=bucket_name)
+    objects = boto_client.list_objects_v2(Bucket=bucket_name)
 
     #  Sometimes there maybe no contents -- no objects
-    files_in_folder = list_obj_response.get("Contents")
+    files_in_folder = objects.get("Contents")
     if not files_in_folder:
         LOGGER.info(f"No objects to be deleted for {bucket_name}")
         return
@@ -187,7 +185,6 @@ def delete_all_objects_from_s3_folder(bucket_name: str, boto_client) -> None:
             "Objects not deleted:\n:"
             f"{json.dumps(delete_response, default=str, indent=4)}",
         )
-        sys.exit(1)
 
 
 @click.command()
