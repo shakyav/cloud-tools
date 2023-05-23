@@ -1,5 +1,3 @@
-import os.path
-
 import boto3
 from simple_logger.logger import get_logger
 
@@ -22,7 +20,7 @@ def iam_client(region=DEFAULT_AWS_REGION):
 
 
 def create_or_update_role_policy(
-    role_name, policy_name, policy_document_path, region=DEFAULT_AWS_REGION
+    role_name, policy_name, policy_document, region=DEFAULT_AWS_REGION
 ):
     """
     Create a new policy role or update an existing one.
@@ -30,22 +28,13 @@ def create_or_update_role_policy(
     Args:
         role_name (str): role policy name
         policy_name (str): policy name
-        policy_document_path (str): path to Json file that holds the policy documents
+        policy_document (str): policy documents as Json file content
         region (str): aws region
-
-    Raises:
-        FileNotFoundError: If policy document not found
     """
     client = iam_client(region=region)
     LOGGER.info(
-        f"Create/Update role {role_name} for policy {policy_name} by documented policy in {policy_document_path}."
+        f"Create/Update role {role_name} for policy {policy_name} by documented policy."
     )
-    if not os.path.isfile(policy_document_path):
-        raise FileNotFoundError(
-            f"File doesn't exists. Please validate file path: '{policy_document_path}'."
-        )
-    with open(policy_document_path, "r") as fd:
-        policy_document = fd.read()
     client.put_role_policy(
         RoleName=role_name,
         PolicyName=policy_name,
