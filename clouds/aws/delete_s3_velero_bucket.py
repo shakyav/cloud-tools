@@ -55,7 +55,11 @@ def delete_bucket(bucket_name: str, boto_client) -> None:
         boto_client: AWS client
     """
     LOGGER.info(f"Delete bucket {bucket_name}")
-    response = boto_client.delete_bucket(Bucket=bucket_name)
+    try:
+        response = boto_client.delete_bucket(Bucket=bucket_name)
+    except boto_client.exceptions.NoSuchBucket:
+        LOGGER.warning(f"{bucket_name} not found")
+        return
 
     response_http_status_code = response["ResponseMetadata"]["HTTPStatusCode"]
     if response_http_status_code == HTTPStatus.NO_CONTENT:
@@ -159,8 +163,11 @@ def delete_all_objects_from_s3_folder(bucket_name: str, boto_client) -> None:
         bucket_name: The bucket name
         boto_client: AWS S3 client
     """
-
-    objects = boto_client.list_objects_v2(Bucket=bucket_name)
+    try:
+        objects = boto_client.list_objects_v2(Bucket=bucket_name)
+    except boto_client.exceptions.NoSuchBucket:
+        LOGGER.warning(f"{bucket_name} not found")
+        return
 
     #  Sometimes there maybe no contents -- no objects
     files_in_folder = objects.get("Contents")
