@@ -1,5 +1,7 @@
+import json
 import os
 from configparser import ConfigParser, NoOptionError, NoSectionError
+from http import HTTPStatus
 
 from simple_logger.logger import get_logger
 
@@ -59,4 +61,73 @@ def verify_aws_config():
     verify_existing_config_in_env_vars_or_file(
         vars_list=["AWS_REGION"],
         file_path=os.path.expanduser("~/.aws/config"),
+    )
+
+
+def delete_all_objects_from_s3_folder(bucket_name: str, boto_client) -> None:
+    """
+    Deletes all files in a folder of an S3 bucket
+
+    Args:
+        bucket_name: The bucket name
+        boto_client: AWS S3 client
+    """
+    try:
+        objects = boto_client.list_objects_v2(Bucket=bucket_name)
+    except boto_client.exceptions.NoSuchBucket:
+        LOGGER.warning(f"{bucket_name} not found")
+        return
+
+    #  Sometimes there maybe no contents -- no objects
+    files_in_folder = objects.get("Contents")
+    if not files_in_folder:
+        LOGGER.info(f"No objects to be deleted for {bucket_name}")
+        return
+
+    files_to_delete = [{"Key": file["Key"]} for file in files_in_folder]
+    delete_response = boto_client.delete_objects(
+        Bucket=bucket_name,
+        Delete={"Objects": files_to_delete, "Quiet": True},
+    )
+
+    delete_response_http_status_code = delete_response["ResponseMetadata"][
+        "HTTPStatusCode"
+    ]
+    if delete_response_http_status_code == HTTPStatus.OK:
+        LOGGER.info("Objects deleted successfully")
+        return
+    else:
+        LOGGER.error(
+            "Objects not deleted:\n:"
+            f"{json.dumps(delete_response, default=str, indent=4)}",
+        )
+
+
+def delete_bucket(bucket_name: str, boto_client) -> None:
+    """
+    Delete velero bucket
+
+    Args:
+        bucket_name: the bucket name
+        boto_client: AWS client
+    """
+    LOGGER.info(f"Delete bucket {bucket_name}")
+    try:
+        response = boto_client.delete_bucket(Bucket=bucket_name)
+    except boto_client.exceptions.NoSuchBucket:
+        LOGGER.warning(f"{bucket_name} not found")
+        return
+
+    response_http_status_code = response["ResponseMetadata"]["HTTPStatusCode"]
+    if response_http_status_code == HTTPStatus.NO_CONTENT:
+        LOGGER.info(f"Cluster bucket '{bucket_name}' deleted successfully")
+        return
+
+    elif response_http_status_code == HTTPStatus.NOT_FOUND:
+        LOGGER.info(f"Bucket '{bucket_name}' not found")
+        return
+
+    LOGGER.error(
+        f"Bucket {bucket_name} not deleted",
+        json.dumps(response, defualt=str, indent=4),
     )

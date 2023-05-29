@@ -1,14 +1,15 @@
 import re
 import shlex
+import shutil
 
 import click
 from ocp_utilities.utils import run_command
 from simple_logger.logger import get_logger
 
-from clouds.aws.aws_utils import verify_aws_credentials
-from clouds.aws.delete_s3_velero_bucket import (
+from clouds.aws.aws_utils import (
     delete_all_objects_from_s3_folder,
     delete_bucket,
+    verify_aws_credentials,
 )
 from clouds.aws.session_clients import ec2_client, iam_client, rds_client, s3_client
 
@@ -40,7 +41,7 @@ def delete_vpc_peering_connections(region_name):
         # aws ec2 delete-vpc-peering-connection --vpc-peering-connection-id "${pc}"
 
 
-def delete_open_id_connect_provider(region_name):
+def delete_open_id_connect_providers(region_name):
     LOGGER.info("Executing delete_open_id_connect_provider")
     _iam_client = iam_client(region_name=region_name)
     for conn in _iam_client.list_open_id_connect_providers()[
@@ -161,6 +162,12 @@ def main(aws_regions, all_aws_regions):
         click.echo("Either pass --all-aws-regions or --aws-regions to run cleanup")
         raise click.Abort()
 
+    if not shutil.which("cloud-nuke"):
+        click.echo(
+            "cloud-nuke is not installed; install from https://github.com/gruntwork-io/cloud-nuke"
+        )
+        raise click.Abort()
+
     verify_aws_credentials()
 
     rerun_cleanup_list = clean_aws_resources(aws_regions=_aws_regions)
@@ -169,13 +176,27 @@ def main(aws_regions, all_aws_regions):
 
 
 def clean_aws_resources(aws_regions):
+    """Deletes AWS resources.
+
+    Deletes open id connector providers, instance profiles and roles.
+    (calls rds instances and vpc peerings connections - currently to only log data).
+    Runs `cloud-nuke` utility - https://github.com/gruntwork-io/cloud-nuke
+    Deletes S2 buckets.
+
+    Args:
+        aws_regions (list): list of AWS region names
+
+    Returns:
+        list: list of cleanup functions return values
+    """
     rerun_cleanup_regions_list = []
+
     for region_name in aws_regions:
         LOGGER.info(f"Deleting resources in region {region_name}")
         rerun_results = [
             delete_rds_instances(region_name=region_name),
             delete_vpc_peering_connections(region_name=region_name),
-            delete_open_id_connect_provider(region_name=region_name),
+            delete_open_id_connect_providers(region_name=region_name),
             delete_instance_profiles(region_name=region_name),
             delete_roles(region_name=region_name),
         ]
