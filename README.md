@@ -16,7 +16,7 @@ poetry install
 ```
 
 ## Docs
-- [AWS readme](aws/README.md)
+- [AWS Readme](clouds/aws/README.md)
 
 ## Release new version
 ### requirements:
