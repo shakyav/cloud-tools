@@ -672,7 +672,7 @@ six = "*"
 
 [[package]]
 name = "openshift-python-utilities"
-version = "4.14.0"
+version = "4.14.1"
 description = "A utilities repository for https://github.com/RedHatQE/openshift-python-wrapper"
 category = "main"
 optional = false
@@ -1924,7 +1924,7 @@ openshift = [
     {file = "openshift-0.13.1.tar.gz", hash = "sha256:a060afb7565dda18b2749857867d80ab22b2f4143264519f493a9cabccc3b8a8"},
 ]
 openshift-python-utilities = [
-    {file = "openshift-python-utilities-4.14.0.tar.gz", hash = "sha256:0c3550850e7ffbb3da2cff2abf3c9391a15c5589acf68e77f6842ba4748c87ce"},
+    {file = "openshift-python-utilities-4.14.1.tar.gz", hash = "sha256:2caaf58754d2405f94fa0b0a3de13f557bee34f0efd684aa9efd244f48c2474c"},
 ]
 openshift-python-wrapper = [
     {file = "openshift-python-wrapper-4.14.1.tar.gz", hash = "sha256:d1e6ace4d32d710144f91b3ddf8ab1c1d74b3fa3318e68147e4aecfcaa8e5c93"},
