@@ -6,6 +6,9 @@ from http import HTTPStatus
 from simple_logger.logger import get_logger
 
 LOGGER = get_logger(name=__name__)
+AWS_CONFIG_FILE = os.environ.get(
+    "AWS_CONFIG_FILE", os.path.expanduser("~/.aws/credentials")
+)
 
 
 class AWSConfigurationError(Exception):
@@ -53,14 +56,14 @@ def verify_existing_config_in_env_vars_or_file(vars_list, file_path, section="de
 def verify_aws_credentials():
     verify_existing_config_in_env_vars_or_file(
         vars_list=["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-        file_path=os.path.expanduser("~/.aws/credentials"),
+        file_path=AWS_CONFIG_FILE,
     )
 
 
 def verify_aws_config():
     verify_existing_config_in_env_vars_or_file(
         vars_list=["AWS_REGION"],
-        file_path=os.path.expanduser("~/.aws/config"),
+        file_path=AWS_CONFIG_FILE,
     )
 
 
