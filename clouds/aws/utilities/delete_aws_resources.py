@@ -9,7 +9,7 @@ from simple_logger.logger import get_logger
 from clouds.aws.aws_utils import (
     delete_all_objects_from_s3_folder,
     delete_bucket,
-    verify_aws_credentials,
+    set_and_verify_aws_credentials,
 )
 from clouds.aws.session_clients import ec2_client, iam_client, rds_client, s3_client
 
@@ -168,7 +168,7 @@ def main(aws_regions, all_aws_regions):
         )
         raise click.Abort()
 
-    verify_aws_credentials()
+    set_and_verify_aws_credentials()
 
     rerun_cleanup_list = clean_aws_resources(aws_regions=_aws_regions)
     while rerun_cleanup_list:

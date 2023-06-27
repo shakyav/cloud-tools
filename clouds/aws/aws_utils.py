@@ -6,7 +6,8 @@ from http import HTTPStatus
 from simple_logger.logger import get_logger
 
 LOGGER = get_logger(name=__name__)
-AWS_CONFIG_FILE = os.environ.get(
+AWS_CONFIG_FILE = os.environ.get("AWS_CONFIG_FILE", os.path.expanduser("~/.aws/config"))
+AWS_CREDENTIALS_FILE = os.environ.get(
     "AWS_CONFIG_FILE", os.path.expanduser("~/.aws/credentials")
 )
 
@@ -15,9 +16,15 @@ class AWSConfigurationError(Exception):
     pass
 
 
-def verify_existing_config_in_env_vars_or_file(vars_list, file_path, section="default"):
+def set_and_verify_existing_config_in_env_vars_or_file(
+    vars_list, file_path, section="default"
+):
     """
     Verify vars are either set as environment variables or in a config file.
+
+    When var exists as OS environment then continue.
+    When vars exists in config file, set them as OS environment.
+    If none of the above raise.
 
     Args:
         vars_list (list): A list of variable names
@@ -34,17 +41,20 @@ def verify_existing_config_in_env_vars_or_file(vars_list, file_path, section="de
     for var in vars_list:
         if os.getenv(var.upper()):
             continue
+
         LOGGER.info(
             f"Variable {var} is not set as environment variables, checking in config file."
         )
         try:
-            var = var.lower()
+            var_in_file = var.lower()
             # `AWS_REGION` environment variable is set as `region` in the config file
-            if aws_region_str in var:
-                var = aws_region_str
-            parser.get(section, var)
+            if aws_region_str in var_in_file:
+                var_in_file = aws_region_str
+
+            os.environ[var.upper()] = parser.get(section, var_in_file)
         except (NoSectionError, NoOptionError):
             missing_vars.append(var)
+
     if missing_vars:
         LOGGER.error(
             f"Missing configuration: {','.join(missing_vars)}. "
@@ -53,15 +63,15 @@ def verify_existing_config_in_env_vars_or_file(vars_list, file_path, section="de
         raise AWSConfigurationError()
 
 
-def verify_aws_credentials():
-    verify_existing_config_in_env_vars_or_file(
+def set_and_verify_aws_credentials():
+    set_and_verify_existing_config_in_env_vars_or_file(
         vars_list=["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
-        file_path=AWS_CONFIG_FILE,
+        file_path=AWS_CREDENTIALS_FILE,
     )
 
 
-def verify_aws_config():
-    verify_existing_config_in_env_vars_or_file(
+def set_and_verify_aws_config():
+    set_and_verify_existing_config_in_env_vars_or_file(
         vars_list=["AWS_REGION"],
         file_path=AWS_CONFIG_FILE,
     )
